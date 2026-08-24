@@ -566,7 +566,8 @@
       } else if (data && data.locked) {
         setMsg('في محاولات غلط كتير من عندك. استنى شوية وجرب تاني.', 'error');
       } else if (data && data.captchaFailed) {
-        setMsg('التحقق (Captcha) مضبوطش، جرب تاني.', 'error');
+        const debugInfo = (data.debug && data.debug.length) ? (' [' + data.debug.join(', ') + ']') : '';
+        setMsg('التحقق (Captcha) مضبوطش، جرب تاني.' + debugInfo, 'error');
       } else {
         setMsg('مفيش طالب بالكود أو الرقم ده، تأكد وجرب تاني.', 'error');
       }
