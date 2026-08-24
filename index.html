@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=Tajawal:wght@400;500;700&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://www.google.com/recaptcha/api.js" async defer></script>
 <style>
   :root{
     --ink:#12181f;
@@ -243,6 +244,19 @@
     font-family:'Tajawal', sans-serif;
   }
 
+  .captcha-wrap{
+    display:flex;
+    justify-content:center;
+    margin-top:18px;
+  }
+  @media (max-width:400px){
+    .captcha-wrap{
+      transform:scale(.85);
+      transform-origin:center top;
+      margin-bottom:-12px;
+    }
+  }
+
   .setup-notice{
     display:none;
     margin-top:16px;
@@ -266,6 +280,9 @@
     <label for="query">الكود بتاعك أو رقم تليفونك</label>
     <input type="text" id="query" inputmode="text" autocomplete="off" placeholder="مثال: 1024 أو 01012345678" required>
     <div class="hint">لو حافظ كودك اكتبه زي ما هو. لو نسيته، اكتب رقم التليفون اللي متسجل بيه وهنجيبلك كودك.</div>
+    <div class="captcha-wrap">
+      <div class="g-recaptcha" id="recaptchaBox" data-sitekey="6LdWtJUtAAAAAOcD8LV-8B3AGIpESmLF26jVmzoY" data-theme="dark"></div>
+    </div>
     <button type="submit" id="submitBtn">طلّع الكود بتاعي</button>
     <div class="msg" id="msg"></div>
     <div class="setup-notice" id="setupNotice">
@@ -303,6 +320,23 @@
     logoImage.onerror = () => resolve(false);
   });
   logoImage.src = LOGO_DATA_URL;
+
+  // معرّف عشوائي بيتولّد مرة واحدة ويتخزن في المتصفح، بيتبعت مع كل طلب
+  // عشان السيرفر يقدر يحسب عدد المحاولات الغلط ويوقف التخمين المتكرر.
+  function getDeviceId(){
+    try {
+      let id = localStorage.getItem('studentLookupDeviceId');
+      if (!id) {
+        id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+          : ('id-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+        localStorage.setItem('studentLookupDeviceId', id);
+      }
+      return id;
+    } catch (err) {
+      return 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+    }
+  }
+  const DEVICE_ID = getDeviceId();
 
   const form = document.getElementById('lookupForm');
   const input = document.getElementById('query');
@@ -506,12 +540,22 @@
       return;
     }
 
+    const captchaToken = (typeof grecaptcha !== 'undefined') ? grecaptcha.getResponse() : '';
+    if (!captchaToken) {
+      setMsg('من فضلك اثبت إنك مش روبوت الأول (Captcha تحت).', 'error');
+      return;
+    }
+
     submitBtn.disabled = true;
     setMsg('بندور على بياناتك...', 'loading');
     ticket.style.display = 'none';
 
     try {
-      const url = API_URL + '?action=lookup&query=' + encodeURIComponent(query);
+      const url = API_URL
+        + '?action=lookup'
+        + '&query=' + encodeURIComponent(query)
+        + '&deviceId=' + encodeURIComponent(DEVICE_ID)
+        + '&captchaToken=' + encodeURIComponent(captchaToken);
       const res = await fetch(url);
       const data = await res.json();
 
@@ -519,6 +563,10 @@
         clearMsg();
         ticket.style.display = 'block';
         showTicket(data.name, data.code);
+      } else if (data && data.locked) {
+        setMsg('في محاولات غلط كتير من عندك. استنى شوية وجرب تاني.', 'error');
+      } else if (data && data.captchaFailed) {
+        setMsg('التحقق (Captcha) مضبوطش، جرب تاني.', 'error');
       } else {
         setMsg('مفيش طالب بالكود أو الرقم ده، تأكد وجرب تاني.', 'error');
       }
@@ -526,6 +574,7 @@
       setMsg('حصلت مشكلة في الاتصال، جرب تاني كمان شوية.', 'error');
     } finally {
       submitBtn.disabled = false;
+      if (typeof grecaptcha !== 'undefined') grecaptcha.reset();
     }
   });
 </script>
